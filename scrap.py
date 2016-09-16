@@ -7,6 +7,7 @@ from time import sleep
 from urllib2 import HTTPError
 import random
 import MySQLdb
+import re
 
 '''---------------项目需求---------------------
 1.采集出北京python职位的要求信息（信息数量不少于300条件）
@@ -68,7 +69,10 @@ class Parser(object):
     # 获取公司名称
     def getName(self, soup):
         name = soup.title.string.encode('utf-8')
-        return name
+        content = re.split('-', name)
+        if len(content) > 1:
+            result = content[1]
+        return result
 
     # 获取薪资
     def getSalary(self, soup):
@@ -79,7 +83,10 @@ class Parser(object):
     def getAddress(self, soup):
         address = soup.select('.work_addr')[0].get_text(
             "", strip=True).encode('utf-8')
-        return address
+        # 去除address中的“-”和空格
+        middleAddr = ''.join(address.split('-'))
+        finalAddr = ''.join(middleAddr.split())
+        return finalAddr
 
     # 获取职位描述
     def getDesc(self, soup):
@@ -88,6 +95,8 @@ class Parser(object):
         return desc
 
 # 定义一个job类
+
+
 class Job(object):
     def __init__(self, name, salary, address, desc):
         self.name = name
@@ -96,30 +105,34 @@ class Job(object):
         self.desc = desc
 
 # 定义一个类负责向数据库中插入数据
+
+
 class InsertData(object):
     def __init__(self):
         super(InsertData, self).__init__()
 
     @staticmethod
     def myInsert(jobs):
-    	# 为了防止插入中文数据乱码，需要在connect函数中增加charset=UTF8
-        conn = MySQLdb.connect(host='127.0.0.1', user='root',
-                               passwd='123456', db='Job_Info', port=3306, charset='UTF8')
-        cur = conn.cursor()
-        cur.execute('create database if not exists Job_Info ')
-        conn.select_db('Job_Info')
-        cur.execute('create table if not exists job(id int primary_key auto_increment,job_name varchar(100) not null,salary varchar(50) not null,address varchar(100) not null,job_desc text notnull)')
-        cur.executemany("insert into job values(%s,%s,%s,%s,%s)", jobs)
-        conn.commit()
-        cur.close()
-        conn.close()
+        try:
+            # 为了防止插入中文数据乱码，需要在connect函数中增加charset=UTF8
+            conn = MySQLdb.connect(host='127.0.0.1', user='root',
+                                   passwd='123456', db='Job_Info', port=3306, charset='UTF8')
+            cur = conn.cursor()
+            conn.select_db('Job_Info')
+            cur.executemany("insert into job values(%s,%s,%s,%s,%s)", jobs)
+            conn.commit()
+            count = cur.execute('select id from job')
+            print('插入数据%d条' % count)
+            cur.close()
+            conn.close()
+        except MySQLdb.Error, e:
+            print('mysql error %d:%s' % (e.args[0], e.args[1]))
 
 if __name__ == '__main__':
     # 获取1级urls
     urls1 = GetUrl.getUrls1()
     # 获取2级urls，爬虫主要在2级urls进行爬取数据
     urls2 = GetUrl.getUrls2()
-    count = 1
     jobs = []
     for url in urls2:
         # 将HTML格式化
@@ -137,9 +150,9 @@ if __name__ == '__main__':
         desc = p.getDesc(soup)
         # 定义一个工作
         job = Job(name, salary, address, desc)
-        jobinfo = (count, job.name, job.salary, job.address, job.desc)
+        jobinfo = (0, job.name, job.salary, job.address, job.desc)
         jobs.append(jobinfo)
-        count += 1
-    print('插入数据%d条' % count)
+    # # 去重
+    # jobs = list(set(jobs))
     # 向数据库中插入数据
     InsertData.myInsert(jobs)
